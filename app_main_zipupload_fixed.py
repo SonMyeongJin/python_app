@@ -118,6 +118,51 @@ def extract_identifier(df):
             
     return "알수없음"
 
+def convert_jibun_to_decimal(jibun_text):
+    """
+    최종지분 텍스트를 소수점 형태로 변환하는 함수
+    예: "2분의 1" -> 0.5, "1/2" -> 0.5, "50%" -> 0.5, "단독소유" -> 1
+    """
+    if not jibun_text or pd.isna(jibun_text):
+        return None
+    
+    jibun_text = str(jibun_text).strip()
+    
+    # 단독소유는 1로 변환
+    if "단독소유" in jibun_text or (("단독" in jibun_text) and len(jibun_text) < 10):
+        return 1.0
+    
+    # 1) 분수 형태 (예: 1/2, 1/3, 공유1/3 등)
+    fraction_match = re.search(r'(?:공유)?(\d+)/(\d+)', jibun_text)
+    if fraction_match:
+        numerator = float(fraction_match.group(1))
+        denominator = float(fraction_match.group(2))
+        if denominator != 0:
+            return numerator / denominator
+    
+    # 2) 퍼센트 형태 (예: 50%, 33.3% 등)
+    percent_match = re.search(r'([\d\.]+)\s*%', jibun_text)
+    if percent_match:
+        return float(percent_match.group(1)) / 100
+    
+    # 3) '분의' 형태 (예: 3분의 1, 2분의 1 등)
+    boonui_match = re.search(r'(\d+\.?\d*)\s*분\s*의\s*(\d+\.?\d*)', jibun_text)
+    if boonui_match:
+        denominator = float(boonui_match.group(1))
+        numerator = float(boonui_match.group(2))
+        if denominator != 0:
+            return numerator / denominator
+    
+    # 4) 분의 형태 - 띄어쓰기 없는 경우 (예: 10139.94분의845.0298)
+    boonui_match2 = re.search(r'(\d+\.?\d*)분의(\d+\.?\d*)', jibun_text)
+    if boonui_match2:
+        denominator = float(boonui_match2.group(1))
+        numerator = float(boonui_match2.group(2))
+        if denominator != 0:
+            return numerator / denominator
+    
+    return None
+
 def keyword_match_partial(cell, keyword):
     if pd.isnull(cell): return False
     return keyword.replace(" ", "") in str(cell).replace(" ", "")
@@ -598,15 +643,27 @@ if run_button and uploaded_zip:
                 # 토지면적 열 추가
                 szj_df["토지면적"] = land_area
                 
-                # 열 순서 재배치 (파일명, 등기명의인, 주민등록번호, 최종지분, 토지면적, 주소, 순위번호)
+                # 소유면적 계산 및 열 추가
+                szj_df["소유면적"] = None
+                for idx, row in szj_df.iterrows():
+                    try:
+                        jibun_decimal = convert_jibun_to_decimal(row["최종지분"])
+                        if jibun_decimal is not None and pd.notna(row["토지면적"]) and row["토지면적"]:
+                            land_area_value = float(str(row["토지면적"]).replace(',', ''))
+                            ownership_area = land_area_value * jibun_decimal
+                            szj_df.at[idx, "소유면적"] = f"{ownership_area:.4f}"
+                    except Exception as e:
+                        pass  # 변환 중 오류 발생시 None 값 유지
+                
+                # 열 순서 재배치 (파일명, 등기명의인, 주민등록번호, 최종지분, 토지면적, 소유면적, 주소, 순위번호)
                 szj_df.insert(0, "파일명", name)
-                columns = ["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "주소", "순위번호"]
+                columns = ["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "소유면적", "주소", "순위번호"]
                 szj_df = szj_df[columns]
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
-                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", land_area, "", ""]], 
-                                             columns=["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "주소", "순위번호"]))
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", land_area, "", "", ""]], 
+                                             columns=["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "소유면적", "주소", "순위번호"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
