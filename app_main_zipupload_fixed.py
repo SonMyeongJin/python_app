@@ -97,15 +97,25 @@ def trim_after_reference_note(df):
     return df
 
 def extract_identifier(df):
+    """
+    파일에서 토지/건물 식별자를 추출하는 함수
+    """
     for i in range(len(df)):
         row = df.iloc[i]
-        row_text = " ".join(str(cell) for cell in row)
+        row_text = " ".join(str(cell) for cell in row if pd.notna(cell))
         if "고유번호" in row_text:
             for j in range(i+1, min(i+10, len(df))):
-                content = " ".join(str(cell) for cell in df.iloc[j])
+                content = " ".join(str(cell) for cell in df.iloc[j] if pd.notna(cell))
                 if content.strip().startswith(("[토지]", "[건물]")):
                     return content.strip()
             break
+    
+    # 고유번호 이후에 [토지] 또는 [건물]이 없는 경우, 전체 데이터에서 찾기
+    for i in range(len(df)):
+        row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+        if row_text.strip().startswith(("[토지]", "[건물]")):
+            return row_text.strip()
+            
     return "알수없음"
 
 def keyword_match_partial(cell, keyword):
@@ -458,6 +468,43 @@ def extract_jibun(text):
     
     return ""
 
+def extract_land_area(df):
+    """
+    엑셀 파일에서 토지면적 정보를 추출하는 함수
+    다양한 형식의 면적 표기를 인식
+    """
+    area = ""
+    land_types = ["염전", "도로", "임야", "유지", "답", "전", "대", "공장용지", "잡종지", "하천", "구거", "제방", "양어장"]
+    
+    # 파일 식별자에서 면적 추출 시도
+    identifier = extract_identifier(df)
+    if "[토지]" in identifier:
+        # 면적 패턴 찾기: "[토지]" 문장 내에서 숫자 + ㎡ 또는 m² 패턴
+        area_match = re.search(r'(\d[\d,\.]*)\s*[㎡m²]', identifier)
+        if area_match:
+            return area_match.group(1).replace(',', '')
+    
+    # 데이터프레임 전체에서 찾기
+    for i in range(len(df)):
+        row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+        
+        # 토지종류가 있는 행에서 면적 패턴 찾기
+        if any(land_type in row_text for land_type in land_types):
+            # 면적 패턴: 숫자 + ㎡ 또는 m² 패턴
+            area_match = re.search(r'(\d[\d,\.]*)\s*[㎡m²]', row_text)
+            if area_match:
+                area = area_match.group(1).replace(',', '')
+                break
+            
+        # "[토지]" 패턴이 있는 행에서 찾기
+        if "[토지]" in row_text:
+            area_match = re.search(r'(\d[\d,\.]*)\s*[㎡m²]', row_text)
+            if area_match:
+                area = area_match.group(1).replace(',', '')
+                break
+    
+    return area
+
 if run_button and uploaded_zip:
     temp_dir = tempfile.mkdtemp()
     szj_list, syg_list, djg_list = [], [], []
@@ -477,6 +524,9 @@ if run_button and uploaded_zip:
             xls = pd.ExcelFile(path)
             df = xls.parse(xls.sheet_names[0]).fillna("")
             name = extract_identifier(df)
+            
+            # 토지면적 정보 추출
+            land_area = extract_land_area(df)
 
             szj_sec, has_szj = extract_section_range(df, "소유지분현황", ["소유권", "저당권"], match_fn=keyword_match_partial)
             syg_sec, has_syg = extract_section_range(df, "소유권.*사항", ["저당권"], match_fn=keyword_match_exact)
@@ -545,10 +595,18 @@ if run_button and uploaded_zip:
                                         szj_df.at[idx, "주소"] = jibun_text
                                     szj_df.at[idx, "최종지분"] = ""
                 
+                # 토지면적 열 추가
+                szj_df["토지면적"] = land_area
+                
+                # 열 순서 재배치 (파일명, 등기명의인, 주민등록번호, 최종지분, 토지면적, 주소, 순위번호)
                 szj_df.insert(0, "파일명", name)
+                columns = ["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "주소", "순위번호"]
+                szj_df = szj_df[columns]
                 szj_list.append(szj_df)
             else:
-                szj_list.append(pd.DataFrame([[name, "기록없음"]], columns=["파일명", "등기명의인"]))
+                # "기록없음" 케이스에도 동일한 컬럼 구조 유지
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", land_area, "", ""]], 
+                                             columns=["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "주소", "순위번호"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
