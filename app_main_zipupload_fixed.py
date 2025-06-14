@@ -550,6 +550,50 @@ def extract_land_area(df):
     
     return area
 
+def extract_right_holders(df):
+    """
+    주요등기사항에서 근저당권자와 지상권자 정보를 추출하고, 
+    원본 텍스트에서 해당 정보를 제거하는 함수
+    """
+    df = df.copy()
+    df["근저당권자"] = ""
+    df["지상권자"] = ""
+    
+    for idx, row in df.iterrows():
+        if "주요등기사항" not in row or pd.isna(row["주요등기사항"]):
+            continue
+            
+        main_text = str(row["주요등기사항"])
+        modified_text = main_text
+        
+        # 근저당권자 추출 및 제거
+        mortgage_pattern = r'근저당권자\s*[:：]?\s*([^,\n]*)'
+        mortgage_match = re.search(mortgage_pattern, main_text)
+        if mortgage_match:
+            df.at[idx, "근저당권자"] = mortgage_match.group(1).strip()
+            # 전체 매치 부분을 찾아 제거 (근저당권자: XXX 형태 전체)
+            full_match = mortgage_match.group(0)
+            modified_text = modified_text.replace(full_match, "")
+        
+        # 지상권자 추출 및 제거
+        surface_pattern = r'지상권자\s*[:：]?\s*([^,\n]*)'
+        surface_match = re.search(surface_pattern, modified_text)
+        if surface_match:
+            df.at[idx, "지상권자"] = surface_match.group(1).strip()
+            # 전체 매치 부분을 찾아 제거 (지상권자: XXX 형태 전체)
+            full_match = surface_match.group(0)
+            modified_text = modified_text.replace(full_match, "")
+        
+        # 수정된 텍스트 정리 (앞뒤 공백, 쉼표 정리)
+        modified_text = modified_text.strip()
+        modified_text = re.sub(r',\s*,', ',', modified_text)  # 연속된 쉼표 제거
+        modified_text = re.sub(r'^\s*,\s*|\s*,\s*$', '', modified_text)  # 시작/끝의 쉼표 제거
+        
+        # 정리된 텍스트로 업데이트
+        df.at[idx, "주요등기사항"] = modified_text
+    
+    return df
+
 if run_button and uploaded_zip:
     temp_dir = tempfile.mkdtemp()
     szj_list, syg_list, djg_list = [], [], []
@@ -676,10 +720,15 @@ if run_button and uploaded_zip:
                 djg_df = extract_precise_named_cols(djg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
                 djg_df = merge_same_row_if_amount_separated(djg_df)  # ✅ 여기에 병합 함수 호출 추가
                 djg_df = trim_after_reference_note(djg_df)
+                # ✅ 근저당권자와 지상권자 정보 추출하여 열 추가
+                djg_df = extract_right_holders(djg_df)
                 djg_df.insert(0, "파일명", name)
                 djg_list.append(djg_df)
             else:
-                djg_list.append(pd.DataFrame([[name, "기록없음"]], columns=["파일명", "순위번호"]))
+                # 빈 데이터프레임에도 모든 열 포함
+                djg_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", "", "", ""]], 
+                                           columns=["파일명", "순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자", "근저당권자", "지상권자"]))
+
         except Exception as e:
             pass  # 또는 logging.warning(...) 등으로 로깅만
     wb = Workbook()
