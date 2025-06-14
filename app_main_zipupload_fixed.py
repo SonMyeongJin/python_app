@@ -10,7 +10,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 st.set_page_config(page_title="(주)건화 등기부등본 Excel 통합기", layout="wide")
 
 password = st.text_input('비밀번호를 입력하세요', type='password')
-if password != '1120':
+if password != '1220':
     st.warning('올바른 비밀번호를 입력하세요.')
     st.stop()
 
@@ -150,33 +150,67 @@ def extract_named_cols(section, col_keywords):
         return pd.DataFrame([["기록없음"]])
     
     header_row = section.iloc[0]
-    # 헤더 병합 전처리
     merged_header = merge_split_headers(header_row)
     
     col_map = {}
     for target in col_keywords:
-        # 향상된 키워드 매칭 사용
         col_idx = enhanced_keyword_match(merged_header, target)
         if col_idx is not None:
             col_map[target] = col_idx
         else:
-            # 기존 방식으로 재시도
             for idx, val in merged_header.items():
                 if keyword_match_partial(val, target):
                     col_map[target] = idx
                     break
-    
+
+    # --- 최종지분이 두 칸으로 나뉘어 있는 경우 합치기 ---
+    # '최종지분'이 col_map에 없고, '최종'과 '지분'이 연속된 칸에 있으면 합치기
+    # 셀 병합되어 한 셀에 '20분의10' 등으로 들어있는 경우는 그대로 사용됨
+    if "최종지분" not in col_map:
+        idx_최종 = None
+        idx_지분 = None
+        for idx, val in merged_header.items():
+            if str(val).strip() == "최종":
+                idx_최종 = idx
+            if str(val).strip() == "지분":
+                idx_지분 = idx
+        if idx_최종 is not None and idx_지분 is not None and abs(idx_최종 - idx_지분) == 1:
+            col_map["최종지분"] = (min(idx_최종, idx_지분), max(idx_최종, idx_지분))
+
     rows = []
     for i in range(1, len(section)):
         row = section.iloc[i]
         row_dict = {}
         for key in col_keywords:
-            if key in col_map:
+            if key == "최종지분":
+                # 1. 헤더가 분리된 경우(최종/지분)
+                if isinstance(col_map.get("최종지분"), tuple):
+                    idx1, idx2 = col_map["최종지분"]
+                    val1 = str(row.get(idx1, "")).strip()
+                    val2 = str(row.get(idx2, "")).strip()
+                    if val1 and val2:
+                        row_dict[key] = val1 + val2
+                    else:
+                        row_dict[key] = val1 or val2
+                # 2. 헤더가 한 칸인데 데이터가 두 칸으로 나뉜 경우(엑셀 병합이 아닌 실제 데이터가 두 칸)
+                elif isinstance(col_map.get("최종지분"), int):
+                    idx = col_map["최종지분"]
+                    val1 = str(row.get(idx, "")).strip()
+                    # 다음 칸 값도 확인 (엑셀에서 병합이 안 된 경우)
+                    val2 = ""
+                    if (idx + 1) in row and not str(merged_header.get(idx + 1, "")).strip():
+                        val2 = str(row.get(idx + 1, "")).strip()
+                    if val1 and val2:
+                        row_dict[key] = val1 + val2
+                    else:
+                        row_dict[key] = val1 or val2
+                else:
+                    row_dict[key] = ""
+            elif key in col_map:
                 row_dict[key] = row.get(col_map[key], "")
             else:
                 row_dict[key] = ""
         rows.append(row_dict)
-    
     return pd.DataFrame(rows)
 
 def find_keyword_header(section, col_keywords, max_search_rows=15):
