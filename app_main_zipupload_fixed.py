@@ -829,35 +829,34 @@ if run_button and uploaded_zip:
                         pass  # 변환 중 오류 발생시 None 값 유지
                 
                 # 열 순서 재배치 - "주소"와 "순위번호"를 "최종지분" 앞으로 이동
-                szj_df.insert(0, "파일명", name)
-                columns = ["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "지분면적"]
+                szj_df.insert(0, "토지주소", name)
+                columns = ["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "지분면적"]
                 szj_df = szj_df[columns]
                 szj_df["그룹정보"] = "있음"  # 그룹 헤더를 사용할 데이터 플래그
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
                 szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_area, "", "없음"]], 
-                                             columns=["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "지분면적", "그룹정보"]))
+                                             columns=["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "지분면적", "그룹정보"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
-                syg_df.insert(0, "파일명", name)
+                syg_df.insert(0, "토지주소", name)
                 syg_list.append(syg_df)
             else:
-                syg_list.append(pd.DataFrame([[name, "기록없음"]], columns=["파일명", "순위번호"]))
+                syg_list.append(pd.DataFrame([[name, "기록없음"]], columns=["토지주소", "순위번호"]))
 
             if has_djg:
                 djg_df = extract_precise_named_cols(djg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
-                djg_df = merge_same_row_if_amount_separated(djg_df)  # ✅ 여기에 병합 함수 호출 추가
+                djg_df = merge_same_row_if_amount_separated(djg_df)
                 djg_df = trim_after_reference_note(djg_df)
-                # ✅ 근저당권자와 지상권자 정보 추출하여 열 추가
                 djg_df = extract_right_holders(djg_df)
-                djg_df.insert(0, "파일명", name)
+                djg_df.insert(0, "토지주소", name)
                 djg_list.append(djg_df)
             else:
                 # 빈 데이터프레임에도 모든 열 포함
                 djg_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", "", "", ""]], 
-                                           columns=["파일명", "순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자", "근저당권자", "지상권자"]))
+                                           columns=["토지주소", "순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자", "근저당권자", "지상권자"]))
 
         except Exception as e:
             pass  # 또는 logging.warning(...) 등으로 로깅만
@@ -873,7 +872,7 @@ if run_button and uploaded_zip:
             if any(df["그룹정보"] == "있음"):
                 # 그룹 구조 정의
                 group_structure = {
-                    "파일명": ["파일명"],
+                    "토지주소": ["토지주소"],
                     "소유자": ["등기명의인", "(주민)등록번호", "주소", "순위번호"],
                     "토지": ["최종지분", "토지면적", "지분면적"]
                 }
