@@ -19,6 +19,85 @@ st.markdown("""
 압축파일(.zip) 안의 폴더 구조와 관계없이 모든 엑셀 파일을 자동 분석합니다.
 """)
 
+
+def merge_adjacent_cells(row_series, max_gap=3):
+    """
+    인접한 셀들을 병합하여 하나의 의미있는 단위로 만드는 함수
+    얇은 선으로 나뉜 셀들을 통합
+    """
+    merged_row = row_series.copy()
+    row_dict = row_series.to_dict()
+    
+    # 빈 셀이 아닌 셀들의 인덱스를 찾기
+    non_empty_indices = [idx for idx, val in row_dict.items() if str(val).strip()]
+    
+    # 연속된 셀들을 그룹화
+    groups = []
+    current_group = []
+    
+    for i, idx in enumerate(non_empty_indices):
+        if not current_group:
+            current_group = [idx]
+        else:
+            # 이전 인덱스와의 거리가 max_gap 이하면 같은 그룹
+            if idx - current_group[-1] <= max_gap:
+                current_group.append(idx)
+            else:
+                # 새로운 그룹 시작
+                groups.append(current_group)
+                current_group = [idx]
+    
+    if current_group:
+        groups.append(current_group)
+    
+    # 각 그룹 내의 셀들을 병합
+    for group in groups:
+        if len(group) > 1:
+            # 그룹 내 모든 값을 연결
+            merged_value = ""
+            for idx in group:
+                val = str(row_dict.get(idx, "")).strip()
+                if val:
+                    if merged_value and not merged_value.endswith((" ", "-", "/")):
+                        merged_value += " "
+                    merged_value += val
+            
+            # 첫 번째 인덱스에 병합된 값 저장
+            merged_row[group[0]] = merged_value
+            
+            # 나머지 인덱스는 빈 값으로 설정
+            for idx in group[1:]:
+                merged_row[idx] = ""
+    
+    return merged_row
+
+def merge_dataframe_cells(df):
+    """
+    데이터프레임 전체에 셀 병합 로직 적용
+    """
+    if df.empty:
+        return df
+    
+    merged_df = df.copy()
+    
+    # 각 행에 대해 셀 병합 적용
+    for i in range(len(merged_df)):
+        merged_df.iloc[i] = merge_adjacent_cells(merged_df.iloc[i])
+    
+    return merged_df
+
+
+
+
+
+
+
+
+
+
+
+
+
 uploaded_zip = st.file_uploader("📁 .zip 파일을 업로드하세요 (내부에 .xlsx 파일 포함)", type=["zip"])
 run_button = st.button("분석 시작")
 
