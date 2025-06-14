@@ -6,7 +6,7 @@ import os
 import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Alignment, PatternFill
+from openpyxl.styles import Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="(주)건화 등기부등본 Excel 통합기", layout="wide")
@@ -601,15 +601,112 @@ def style_header_row(ws):
     # 연한 초록색 배경 설정 (RGB: 230, 244, 234)
     light_green_fill = PatternFill(start_color="E6F4EA", end_color="E6F4EA", fill_type="solid")
     
+    # 테두리 스타일 정의
+    thin_border = Border(
+        left=Side(style='thin', color='000000'),
+        right=Side(style='thin', color='000000'),
+        top=Side(style='thin', color='000000'),
+        bottom=Side(style='thin', color='000000')
+    )
+    
     # 첫 번째 행 (헤더) 스타일 적용
     for cell in ws[1]:
         # 중앙 정렬
         cell.alignment = Alignment(horizontal='center', vertical='center')
         # 연한 초록색 배경
         cell.fill = light_green_fill
+        # 테두리 추가
+        cell.border = thin_border
     
     # 헤더 행 높이 조정
     ws.row_dimensions[1].height = 25
+    
+    # 열 너비 자동 조정 (내용에 따라)
+    for col in ws.columns:
+        max_length = 0
+        col_letter = get_column_letter(col[0].column)
+        # 각 셀의 내용 길이 확인
+        for cell in col:
+            try:
+                cell_length = len(str(cell.value)) if cell.value else 0
+                max_length = max(max_length, cell_length)
+            except:
+                pass
+        # 최소 10, 최대 50 사이로 너비 조정
+        adjusted_width = min(max(max_length + 2, 10), 50)
+        ws.column_dimensions[col_letter].width = adjusted_width
+
+def create_grouped_headers(ws, df, group_structure):
+    """
+    워크시트에 그룹화된 헤더를 생성하는 함수
+    group_structure: {그룹명: [컬럼명 리스트]} 형태의 딕셔너리
+    """
+    # 첫 번째 행 - 그룹 헤더
+    row_index = 1
+    col_index = 1
+    
+    # 연한 초록색 배경 설정 (RGB: 230, 244, 234)
+    light_green_fill = PatternFill(start_color="E6F4EA", end_color="E6F4EA", fill_type="solid")
+    
+    # 테두리 스타일 정의
+    thin_border = Border(
+        left=Side(style='thin', color='000000'),
+        right=Side(style='thin', color='000000'),
+        top=Side(style='thin', color='000000'),
+        bottom=Side(style='thin', color='000000')
+    )
+    
+    # 그룹 헤더 행 추가
+    for group_name, columns in group_structure.items():
+        # 그룹 이름 셀
+        group_cell = ws.cell(row=row_index, column=col_index)
+        group_cell.value = group_name
+        group_cell.alignment = Alignment(horizontal='center', vertical='center')
+        group_cell.fill = light_green_fill
+        group_cell.border = thin_border
+        
+        # 여러 열에 걸쳐 병합
+        if len(columns) > 1:
+            ws.merge_cells(start_row=row_index, start_column=col_index, 
+                          end_row=row_index, end_column=col_index + len(columns) - 1)
+            
+            # 병합된 셀에 테두리 추가 (병합 후에 모든 셀에 테두리 적용)
+            for c in range(col_index, col_index + len(columns)):
+                cell = ws.cell(row=row_index, column=c)
+                cell.border = thin_border
+        
+        col_index += len(columns)
+    
+    # 두 번째 행 - 세부 헤더
+    row_index = 2
+    col_index = 1
+    
+    for _, columns in group_structure.items():
+        for col_name in columns:
+            col_cell = ws.cell(row=row_index, column=col_index)
+            col_cell.value = col_name
+            col_cell.alignment = Alignment(horizontal='center', vertical='center')
+            col_cell.fill = light_green_fill
+            col_cell.border = thin_border  # 각 열 헤더에 테두리 추가
+            col_index += 1
+    
+    # 데이터 추가 (3번째 행부터)
+    row_index = 3
+    for _, row in df.iterrows():
+        col_index = 1
+        for _, columns in group_structure.items():
+            for col_name in columns:
+                cell = ws.cell(row=row_index, column=col_index)
+                cell.value = row.get(col_name, "")
+                # 데이터 셀에도 가벼운 테두리 추가 (선택적)
+                cell.border = Border(
+                    left=Side(style='thin', color='D3D3D3'),
+                    right=Side(style='thin', color='D3D3D3'),
+                    top=Side(style='thin', color='D3D3D3'),
+                    bottom=Side(style='thin', color='D3D3D3')
+                )
+                col_index += 1
+        row_index += 1
     
     # 열 너비 자동 조정 (내용에 따라)
     for col in ws.columns:
@@ -735,11 +832,12 @@ if run_button and uploaded_zip:
                 szj_df.insert(0, "파일명", name)
                 columns = ["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "소유면적"]
                 szj_df = szj_df[columns]
+                szj_df["그룹정보"] = "있음"  # 그룹 헤더를 사용할 데이터 플래그
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
-                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_area, ""]], 
-                                             columns=["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "소유면적"]))
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_area, "", "없음"]], 
+                                             columns=["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "소유면적", "그룹정보"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
@@ -769,7 +867,25 @@ if run_button and uploaded_zip:
         [szj_list, syg_list, djg_list]
     ):
         ws = wb.create_sheet(title=sheetname)
-        if data:
+        if data and sheetname == "1. 소유지분현황 (갑구)":
+            df = pd.concat(data, ignore_index=True)
+            # 소유지분현황(갑구) 시트에는 그룹 헤더 적용
+            if any(df["그룹정보"] == "있음"):
+                # 그룹 구조 정의
+                group_structure = {
+                    "파일명": ["파일명"],
+                    "소유자": ["등기명의인", "(주민)등록번호", "주소", "순위번호"],
+                    "토지": ["최종지분", "토지면적", "소유면적"]
+                }
+                df = df.drop(columns=["그룹정보"])  # 그룹정보 열 제거
+                create_grouped_headers(ws, df, group_structure)
+            else:
+                df = df.drop(columns=["그룹정보"])  # 그룹정보 열 제거
+                for r in dataframe_to_rows(df, index=False, header=True):
+                    ws.append(r)
+                # 헤더 행 스타일 적용
+                style_header_row(ws)
+        elif data:
             df = pd.concat(data, ignore_index=True)
             for r in dataframe_to_rows(df, index=False, header=True):
                 ws.append(r)
