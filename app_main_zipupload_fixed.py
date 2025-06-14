@@ -6,6 +6,8 @@ import os
 import re
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.styles import Alignment, PatternFill
+from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="(주)건화 등기부등본 Excel 통합기", layout="wide")
 
@@ -594,6 +596,36 @@ def extract_right_holders(df):
     
     return df
 
+def style_header_row(ws):
+    """워크시트 헤더 행을 스타일링하는 함수"""
+    # 연한 초록색 배경 설정 (RGB: 230, 244, 234)
+    light_green_fill = PatternFill(start_color="E6F4EA", end_color="E6F4EA", fill_type="solid")
+    
+    # 첫 번째 행 (헤더) 스타일 적용
+    for cell in ws[1]:
+        # 중앙 정렬
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        # 연한 초록색 배경
+        cell.fill = light_green_fill
+    
+    # 헤더 행 높이 조정
+    ws.row_dimensions[1].height = 25
+    
+    # 열 너비 자동 조정 (내용에 따라)
+    for col in ws.columns:
+        max_length = 0
+        col_letter = get_column_letter(col[0].column)
+        # 각 셀의 내용 길이 확인
+        for cell in col:
+            try:
+                cell_length = len(str(cell.value)) if cell.value else 0
+                max_length = max(max_length, cell_length)
+            except:
+                pass
+        # 최소 10, 최대 50 사이로 너비 조정
+        adjusted_width = min(max(max_length + 2, 10), 50)
+        ws.column_dimensions[col_letter].width = adjusted_width
+
 if run_button and uploaded_zip:
     temp_dir = tempfile.mkdtemp()
     szj_list, syg_list, djg_list = [], [], []
@@ -699,15 +731,15 @@ if run_button and uploaded_zip:
                     except Exception as e:
                         pass  # 변환 중 오류 발생시 None 값 유지
                 
-                # 열 순서 재배치 (파일명, 등기명의인, 주민등록번호, 최종지분, 토지면적, 소유면적, 주소, 순위번호)
+                # 열 순서 재배치 - "주소"와 "순위번호"를 "최종지분" 앞으로 이동
                 szj_df.insert(0, "파일명", name)
-                columns = ["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "소유면적", "주소", "순위번호"]
+                columns = ["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "소유면적"]
                 szj_df = szj_df[columns]
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
-                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", land_area, "", "", ""]], 
-                                             columns=["파일명", "등기명의인", "(주민)등록번호", "최종지분", "토지면적", "소유면적", "주소", "순위번호"]))
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_area, ""]], 
+                                             columns=["파일명", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "소유면적"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
@@ -741,8 +773,12 @@ if run_button and uploaded_zip:
             df = pd.concat(data, ignore_index=True)
             for r in dataframe_to_rows(df, index=False, header=True):
                 ws.append(r)
+            # 헤더 행 스타일 적용
+            style_header_row(ws)
         else:
             ws.append(["기록없음"])
+            # 데이터가 없는 경우에도 헤더 스타일 적용
+            style_header_row(ws)
 
     wb.remove(wb["Sheet"])
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
