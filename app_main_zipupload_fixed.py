@@ -366,6 +366,98 @@ def extract_jumin_number(text):
     match = re.search(pattern, text)
     return match.group(0) if match else ""
 
+def is_jibun_pattern(text):
+    """
+    최종지분 패턴을 확인하는 함수
+    예: 1/2, 50%, 3분의 1, 공유1/3, 단독소유 등
+    """
+    if not isinstance(text, str):
+        return False
+    
+    # 텍스트가 비어있으면 지분 패턴 아님
+    if not text.strip():
+        return False
+    
+    # "단독소유" 키워드 확인
+    if "단독소유" in text or "단독" in text:
+        return True
+    
+    # 분수 패턴 (예: 1/2, 1/3, 공유1/3 등)
+    pattern1 = re.compile(r'(?:공유)?[\d]+[/][\d]+')
+    # 퍼센트 패턴 (예: 50%, 33.3% 등)
+    pattern2 = re.compile(r'[\d]+[.]?[\d]*\s*%')
+    # '분의' 패턴 (예: 3분의 1, 2분의 1 등)
+    pattern3 = re.compile(r'[\d]+\.?[\d]*\s*분\s*의\s*[\d]+\.?[\d]*')
+    # 분의 패턴 - 띄어쓰기 없는 경우 (예: 10139.94분의845.0298)
+    pattern4 = re.compile(r'[\d]+\.?[\d]*분의[\d]+\.?[\d]*')
+    
+    return (bool(re.search(pattern1, text)) or 
+            bool(re.search(pattern2, text)) or 
+            bool(re.search(pattern3, text)) or 
+            bool(re.search(pattern4, text)))
+
+def is_address_pattern(text):
+    """
+    주소 패턴을 확인하는 함수
+    """
+    if not isinstance(text, str):
+        return False
+    
+    # "단독소유" 키워드가 있으면 주소가 아님
+    if "단독소유" in text or "단독" in text:
+        return False
+    
+    # 주소에 흔히 포함되는 키워드
+    address_keywords = ['시', '도', '군', '구', '읍', '면', '동', '로', '길', '아파트', '빌라', '번지']
+    text_no_space = re.sub(r'\s+', '', text)
+    
+    for kw in address_keywords:
+        if kw in text_no_space:
+            return True
+            
+    return False
+
+def extract_jibun(text):
+    """
+    문자열에서 지분 패턴 추출
+    """
+    if not isinstance(text, str):
+        return ""
+    
+    # "단독소유" 키워드 확인
+    if "단독소유" in text:
+        return "단독소유"
+    elif "단독" in text and len(text.strip()) < 10:  # "단독" 단어만 있고 길이가 짧은 경우
+        return "단독소유"
+    
+    # 분수 패턴 (예: 1/2, 1/3, 공유1/3 등)
+    pattern1 = re.compile(r'(?:공유)?[\d]+[/][\d]+')
+    # 퍼센트 패턴 (예: 50%, 33.3% 등)
+    pattern2 = re.compile(r'[\d]+[.]?[\d]*\s*%')
+    # '분의' 패턴 - 띄어쓰기 있는 경우 (예: 3분의 1, 10139.94분 의 845.0298)
+    pattern3 = re.compile(r'[\d]+\.?[\d]*\s*분\s*의\s*[\d]+\.?[\d]*')
+    # 분의 패턴 - 띄어쓰기 없는 경우 (예: 10139.94분의845.0298)
+    pattern4 = re.compile(r'[\d]+\.?[\d]*분의[\d]+\.?[\d]*')
+    
+    # 각 패턴 순서대로 확인
+    match1 = re.search(pattern1, text)
+    if match1:
+        return match1.group(0)
+    
+    match2 = re.search(pattern2, text)
+    if match2:
+        return match2.group(0)
+    
+    match3 = re.search(pattern3, text)
+    if match3:
+        return match3.group(0)
+    
+    match4 = re.search(pattern4, text)
+    if match4:
+        return match4.group(0)
+    
+    return ""
+
 if run_button and uploaded_zip:
     temp_dir = tempfile.mkdtemp()
     szj_list, syg_list, djg_list = [], [], []
@@ -401,6 +493,57 @@ if run_button and uploaded_zip:
                         if jumin:
                             szj_df.at[idx, "(주민)등록번호"] = jumin
                             szj_df.at[idx, "등기명의인"] = str(row["등기명의인"]).replace(jumin, "").strip()
+                    
+                    # 최종지분과 주소 추가 정리
+                    address_text = str(row["주소"]).strip()
+                    jibun_text = str(row["최종지분"]).strip()
+                    
+                    # 주소에서 단독소유 또는 지분 패턴 찾기
+                    if pd.notna(row["주소"]) and is_jibun_pattern(address_text):
+                        jibun_in_address = extract_jibun(address_text)
+                        if jibun_in_address:
+                            # 최종지분이 비어있거나, 주소에서 발견한 지분이 더 정확해 보이는 경우
+                            if not jibun_text or len(jibun_in_address) > len(jibun_text):
+                                szj_df.at[idx, "최종지분"] = jibun_in_address
+                            # 주소에서는 지분 정보 제거
+                            szj_df.at[idx, "주소"] = address_text.replace(jibun_in_address, "").strip()
+                    
+                    # 최종지분에 주소 패턴 찾기
+                    if pd.notna(row["최종지분"]) and is_address_pattern(jibun_text):
+                        # 주소 필드가 비어있거나 최종지분의 텍스트가 더 길면(상세 주소일 가능성)
+                        if not address_text or (len(jibun_text) > len(address_text)):
+                            szj_df.at[idx, "주소"] = jibun_text
+                            szj_df.at[idx, "최종지분"] = ""
+                
+                # 마지막 검증 - 단독소유 확인
+                for idx, row in szj_df.iterrows():
+                    address_text = str(row["주소"]).strip()
+                    if "단독" in address_text and "단독소유" not in str(row["최종지분"]):
+                        # 단독 텍스트가 주소에 있고 최종지분에 없으면 이동
+                        szj_df.at[idx, "최종지분"] = "단독소유"
+                        # 주소에서는 '단독' 또는 '단독소유' 제거
+                        szj_df.at[idx, "주소"] = re.sub(r'단독(?:소유)?', '', address_text).strip()
+                
+                # 최종지분에서 주소 정보 제거하기
+                for idx, row in szj_df.iterrows():
+                    jibun_text = str(row["최종지분"]).strip()
+                    
+                    # 최종지분에서 지분 패턴 추출
+                    if jibun_text and pd.notna(row["최종지분"]):
+                        if "단독소유" in jibun_text or "단독" in jibun_text and len(jibun_text) < 10:
+                            # 단독소유는 그대로 유지
+                            szj_df.at[idx, "최종지분"] = "단독소유"
+                        else:
+                            # 지분 패턴만 추출
+                            extracted_jibun = extract_jibun(jibun_text)
+                            if extracted_jibun:
+                                szj_df.at[idx, "최종지분"] = extracted_jibun
+                            else:
+                                # 주소 패턴 확인 후 주소라면 해당 필드를 비움
+                                if is_address_pattern(jibun_text):
+                                    if str(row["주소"]).strip() == "":
+                                        szj_df.at[idx, "주소"] = jibun_text
+                                    szj_df.at[idx, "최종지분"] = ""
                 
                 szj_df.insert(0, "파일명", name)
                 szj_list.append(szj_df)
