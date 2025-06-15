@@ -945,6 +945,10 @@ if run_button and uploaded_zip:
                 # 빈 값을 다시 빈 문자열로 변환
                 djg_df = djg_df.fillna('')
                 
+                # "대상소유자" 컬럼에서 모든 띄어쓰기 제거
+                if "대상소유자" in djg_df.columns:
+                    djg_df["대상소유자"] = djg_df["대상소유자"].astype(str).str.replace(" ", "")
+                
                 djg_df = merge_same_row_if_amount_separated(djg_df)
                 djg_df = trim_after_reference_note(djg_df)
                 djg_df = extract_right_holders(djg_df)
