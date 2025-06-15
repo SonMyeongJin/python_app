@@ -995,9 +995,12 @@ if run_button and uploaded_zip:
             # Make sure any index column is not included in the output
             df.reset_index(drop=True, inplace=True)  # Reset and drop any existing index
             
-            # 세 번째 시트(저당권사항)인 경우 "순위번호" 헤더를 "기록유무"로 변경
-            if sheetname == "3. 저당권사항 (을구)" and "순위번호" in df.columns:
-                df = df.rename(columns={"순위번호": "기록유무"})
+            # 세 번째 시트(저당권사항)인 경우 "순위번호" 헤더를 "기록유무"로 변경하고 "등기목적" 열 삭제
+            if sheetname == "3. 저당권사항 (을구)":
+                if "순위번호" in df.columns:
+                    df = df.rename(columns={"순위번호": "기록유무"})
+                if "등기목적" in df.columns:
+                    df = df.drop(columns=["등기목적"])
             
             for r in dataframe_to_rows(df, index=False, header=True):
                 ws.append(r)
