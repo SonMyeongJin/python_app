@@ -620,6 +620,26 @@ def extract_land_area(df):
     
     return area
 
+def check_san_in_address(address):
+    """
+    토지주소에 '산'이 있는지 확인하는 함수
+    '산'이 숫자 앞에 있으면 'O', 아니면 'X'
+    """
+    if not isinstance(address, str):
+        return 'X'
+    
+    # 주소에서 마지막 부분을 가져오기
+    parts = address.split()
+    if not parts:
+        return 'X'
+    
+    # 주소의 마지막 부분에서 '산' 다음에 숫자가 오는 패턴 확인
+    import re
+    for part in parts:
+        if re.search(r'산\d+', part) or re.search(r'산\s*\d+', part):
+            return 'O'
+    return 'X'
+
 def extract_right_holders(df):
     """
     주요등기사항에서 근저당권자와 지상권자 정보를 추출하고, 
@@ -974,11 +994,22 @@ if run_button and uploaded_zip:
         ws = wb.create_sheet(title=sheetname)
         if data and sheetname == "1. 소유지분현황 (갑구)":
             df = pd.concat(data, ignore_index=True)
+            
+            # "산" 열 추가
+            df["산"] = df["토지주소"].apply(check_san_in_address)
+            
+            # 열 순서 재배치 - "토지주소" 다음에 "산" 위치
+            cols = df.columns.tolist()
+            cols.remove("산")
+            idx = cols.index("토지주소")
+            cols.insert(idx + 1, "산")
+            df = df[cols]
+            
             # 소유지분현황(갑구) 시트에는 그룹 헤더 적용
             if any(df["그룹정보"] == "있음"):
-                # 그룹 구조 정의
+                # 그룹 구조 정의 - "산" 열 추가
                 group_structure = {
-                    "토지주소": ["토지주소"],
+                    "토지주소": ["토지주소", "산"],
                     "소유자": ["등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호"],
                     "토지": ["최종지분", "최종지분 수치화", "지목", "토지면적", "지분면적"]
                 }
