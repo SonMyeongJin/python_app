@@ -903,16 +903,26 @@ if run_button and uploaded_zip:
                     except Exception as e:
                         pass  # 변환 중 오류 발생시 None 값 유지
                 
+                # 최종지분 수치화 열 추가
+                szj_df["최종지분 수치화"] = None
+                for idx, row in szj_df.iterrows():
+                    try:
+                        jibun_decimal = convert_jibun_to_decimal(row["최종지분"])
+                        if jibun_decimal is not None:
+                            szj_df.at[idx, "최종지분 수치화"] = jibun_decimal
+                    except Exception as e:
+                        pass  # 변환 중 오류 발생시 None 값 유지
+                
                 # 열 순서 재배치
                 szj_df.insert(0, "토지주소", name)
-                columns = ["토지주소", "등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적"]
+                columns = ["토지주소", "등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호", "최종지분", "최종지분 수치화", "지목", "토지면적", "지분면적"]
                 szj_df = szj_df[columns]
                 szj_df["그룹정보"] = "있음"  # 그룹 헤더를 사용할 데이터 플래그
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
-                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", "", land_type, land_area, "", "없음"]], 
-                                             columns=["토지주소", "등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적", "그룹정보"]))
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", "", "", land_type, land_area, "", "없음"]], 
+                                             columns=["토지주소", "등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호", "최종지분", "최종지분 수치화", "지목", "토지면적", "지분면적", "그룹정보"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
@@ -949,7 +959,7 @@ if run_button and uploaded_zip:
                 group_structure = {
                     "토지주소": ["토지주소"],
                     "소유자": ["등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호"],
-                    "토지": ["최종지분", "지목", "토지면적", "지분면적"]
+                    "토지": ["최종지분", "최종지분 수치화", "지목", "토지면적", "지분면적"]
                 }
                 df = df.drop(columns=["그룹정보"])  # 그룹정보 열 제거
                 create_grouped_headers(ws, df, group_structure)
