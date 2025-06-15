@@ -515,6 +515,24 @@ def extract_jibun(text):
     
     return ""
 
+def extract_ownership_type(owner_name):
+    """
+    등기명의인 문자열에서 소유구분 정보(소유자, 공유자 등)를 추출하는 함수
+    """
+    if not isinstance(owner_name, str):
+        return "", owner_name
+    
+    # (소유자), (공유자) 패턴 찾기
+    pattern = r'\((소유자|공유자)\)'
+    match = re.search(pattern, owner_name)
+    
+    if match:
+        ownership_type = match.group(1)  # '소유자' 또는 '공유자' 추출
+        clean_name = owner_name.replace(match.group(0), "").strip()  # 패턴 제거
+        return ownership_type, clean_name
+    else:
+        return "", owner_name
+
 def extract_land_type(df):
     """
     엑셀 파일에서 토지 지목 정보를 추출하는 함수
@@ -800,8 +818,17 @@ if run_button and uploaded_zip:
             if has_szj:
                 szj_df = extract_named_cols(szj_sec, ["등기명의인", "(주민)등록번호", "최종지분", "주소", "순위번호"])
                 
+                # 소유구분 열 추가
+                szj_df["소유구분"] = ""
+                
                 # 데이터 후처리 - 등기명의인과 주민등록번호 정리
                 for idx, row in szj_df.iterrows():
+                    # 소유구분 추출
+                    if pd.notna(row["등기명의인"]):
+                        ownership_type, clean_name = extract_ownership_type(str(row["등기명의인"]))
+                        szj_df.at[idx, "소유구분"] = ownership_type
+                        szj_df.at[idx, "등기명의인"] = clean_name
+                    
                     # 등기명의인에서 주민번호 패턴이 있으면 분리
                     if pd.notna(row["등기명의인"]):
                         jumin = extract_jumin_number(str(row["등기명의인"]))
@@ -878,14 +905,14 @@ if run_button and uploaded_zip:
                 
                 # 열 순서 재배치
                 szj_df.insert(0, "토지주소", name)
-                columns = ["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적"]
+                columns = ["토지주소", "등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적"]
                 szj_df = szj_df[columns]
                 szj_df["그룹정보"] = "있음"  # 그룹 헤더를 사용할 데이터 플래그
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
-                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_type, land_area, "", "없음"]], 
-                                             columns=["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적", "그룹정보"]))
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", "", land_type, land_area, "", "없음"]], 
+                                             columns=["토지주소", "등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적", "그룹정보"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
@@ -921,7 +948,7 @@ if run_button and uploaded_zip:
                 # 그룹 구조 정의
                 group_structure = {
                     "토지주소": ["토지주소"],
-                    "소유자": ["등기명의인", "(주민)등록번호", "주소", "순위번호"],
+                    "소유자": ["등기명의인", "소유구분", "(주민)등록번호", "주소", "순위번호"],
                     "토지": ["최종지분", "지목", "토지면적", "지분면적"]
                 }
                 df = df.drop(columns=["그룹정보"])  # 그룹정보 열 제거
