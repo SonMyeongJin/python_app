@@ -933,6 +933,18 @@ if run_button and uploaded_zip:
 
             if has_djg:
                 djg_df = extract_precise_named_cols(djg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
+                
+                # 빈 행 제거 - 빈 문자열을 NA로 변환 후 모든 값이 NA인 행 제거
+                djg_df = djg_df.replace('', pd.NA)
+                djg_df = djg_df.dropna(how='all')
+                
+                # 공백만 있는 행도 제거 (문자열을 trim한 후 빈 문자열인지 확인)
+                mask = ~djg_df.astype(str).apply(lambda row: row.str.strip().eq('').all(), axis=1)
+                djg_df = djg_df[mask].reset_index(drop=True)
+                
+                # 빈 값을 다시 빈 문자열로 변환
+                djg_df = djg_df.fillna('')
+                
                 djg_df = merge_same_row_if_amount_separated(djg_df)
                 djg_df = trim_after_reference_note(djg_df)
                 djg_df = extract_right_holders(djg_df)
