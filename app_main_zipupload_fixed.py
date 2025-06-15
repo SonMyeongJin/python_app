@@ -376,8 +376,12 @@ def extract_precise_named_cols(section, col_keywords):
     
     col_map = {key: find_col_index(header_row, key) for key in col_keywords if find_col_index(header_row, key) is not None}
     if not col_map:
-        return pd.DataFrame([["기록없음"]])
-    
+       # 모든 컬럼에 대해 빈 값을 생성하고, 첫번째 컬럼에만 "기록없음" 표시
+       result = pd.DataFrame(columns=col_keywords)
+       result.loc[0] = [""] * len(col_keywords)
+       result.iloc[0, 0] = "기록없음"
+       return result
+
     rows = []
     for i in range(start_row, len(section)):
         row = section.iloc[i]
