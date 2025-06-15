@@ -958,24 +958,11 @@ if run_button and uploaded_zip:
                 djg_df = extract_right_holders(djg_df)
                 djg_df.insert(0, "토지주소", name)
                 
-                # 각 행마다 "기록유무" 값을 결정
-                # 먼저 빈 "기록유무" 열 추가
-                djg_df.insert(1, "기록유무", "")
-                
-                # 각 행에 대해 실제 데이터가 있는지 확인
-                for idx, row in djg_df.iterrows():
-                    # 순위번호가 "기록없음"이거나 주요 열들이 모두 비어있으면 "X", 그렇지 않으면 "O"
-                    if row.get("순위번호") == "기록없음" or all(pd.isna(row.get(col, "")) or str(row.get(col, "")).strip() == "" 
-                                                         for col in ["등기목적", "접수정보", "주요등기사항"]):
-                        djg_df.at[idx, "기록유무"] = "X"
-                    else:
-                        djg_df.at[idx, "기록유무"] = "O"
-                
                 djg_list.append(djg_df)
             else:
-                # 빈 데이터프레임에도 모든 열 포함
-                djg_list.append(pd.DataFrame([[name, "X", "기록없음", "", "", "", "", "", ""]], 
-                                           columns=["토지주소", "기록유무", "순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자", "근저당권자", "지상권자"]))
+                # 빈 데이터프레임에도 모든 열 포함 - 기록유무 열 제거
+                djg_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", "", ""]], 
+                                           columns=["토지주소", "순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자", "근저당권자", "지상권자"]))
 
         except Exception as e:
             pass  # 또는 logging.warning(...) 등으로 로깅만
