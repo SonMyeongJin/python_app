@@ -515,6 +515,52 @@ def extract_jibun(text):
     
     return ""
 
+def extract_land_type(df):
+    """
+    엑셀 파일에서 토지 지목 정보를 추출하는 함수
+    """
+    land_type = ""
+    # 더 구체적이고 긴 단어가 먼저 검사되도록 정렬
+    land_types = ["공장용지", "잡종지", "염전", "도로", "임야", "유지", "하천", "구거", "제방", "양어장"]
+    
+    # 파일 식별자에서 지목 정보 추출 시도
+    identifier = extract_identifier(df)
+    if "[토지]" in identifier:
+        # 정확한 매칭을 위한 패턴: 앞뒤로 공백이나 문장 끝인 경우만 매칭
+        for lt in land_types:
+            pattern = r'(^|\s)' + lt + r'($|\s)'
+            if re.search(pattern, identifier):
+                land_type = lt
+                break
+                
+        # 정확한 매칭이 안 된 경우 부분 매칭으로 시도
+        if not land_type:
+            for lt in land_types:
+                if lt in identifier:
+                    land_type = lt
+                    break
+    
+    # 데이터프레임 전체에서 찾기
+    if not land_type:
+        for i in range(len(df)):
+            row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+            
+            # 정확한 매칭을 먼저 시도
+            for lt in land_types:
+                pattern = r'(^|\s)' + lt + r'($|\s)'
+                if re.search(pattern, row_text):
+                    land_type = lt
+                    return land_type
+            
+            # 정확한 매칭이 안 되면 부분 매칭 시도
+            if not land_type:
+                for lt in land_types:
+                    if lt in row_text:
+                        land_type = lt
+                        return land_type
+    
+    return land_type
+
 def extract_land_area(df):
     """
     엑셀 파일에서 토지면적 정보를 추출하는 함수
@@ -743,8 +789,9 @@ if run_button and uploaded_zip:
             df = xls.parse(xls.sheet_names[0]).fillna("")
             name = extract_identifier(df)
             
-            # 토지면적 정보 추출
+            # 토지면적과 지목 정보 추출
             land_area = extract_land_area(df)
+            land_type = extract_land_type(df)
 
             szj_sec, has_szj = extract_section_range(df, "소유지분현황", ["소유권", "저당권"], match_fn=keyword_match_partial)
             syg_sec, has_syg = extract_section_range(df, "소유권.*사항", ["저당권"], match_fn=keyword_match_exact)
@@ -814,6 +861,7 @@ if run_button and uploaded_zip:
                                     szj_df.at[idx, "최종지분"] = ""
                 
                 # 토지면적 열 추가
+                szj_df["지목"] = land_type      # 지목 열 추가
                 szj_df["토지면적"] = land_area
                 
                 # 소유면적 계산 및 열 추가
@@ -828,16 +876,16 @@ if run_button and uploaded_zip:
                     except Exception as e:
                         pass  # 변환 중 오류 발생시 None 값 유지
                 
-                # 열 순서 재배치 - "주소"와 "순위번호"를 "최종지분" 앞으로 이동
+                # 열 순서 재배치
                 szj_df.insert(0, "토지주소", name)
-                columns = ["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "지분면적"]
+                columns = ["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적"]
                 szj_df = szj_df[columns]
                 szj_df["그룹정보"] = "있음"  # 그룹 헤더를 사용할 데이터 플래그
                 szj_list.append(szj_df)
             else:
                 # "기록없음" 케이스에도 동일한 컬럼 구조 유지
-                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_area, "", "없음"]], 
-                                             columns=["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "토지면적", "지분면적", "그룹정보"]))
+                szj_list.append(pd.DataFrame([[name, "기록없음", "", "", "", "", land_type, land_area, "", "없음"]], 
+                                             columns=["토지주소", "등기명의인", "(주민)등록번호", "주소", "순위번호", "최종지분", "지목", "토지면적", "지분면적", "그룹정보"]))
 
             if has_syg:
                 syg_df = extract_precise_named_cols(syg_sec, ["순위번호", "등기목적", "접수정보", "주요등기사항", "대상소유자"])
@@ -874,7 +922,7 @@ if run_button and uploaded_zip:
                 group_structure = {
                     "토지주소": ["토지주소"],
                     "소유자": ["등기명의인", "(주민)등록번호", "주소", "순위번호"],
-                    "토지": ["최종지분", "토지면적", "지분면적"]
+                    "토지": ["최종지분", "지목", "토지면적", "지분면적"]
                 }
                 df = df.drop(columns=["그룹정보"])  # 그룹정보 열 제거
                 create_grouped_headers(ws, df, group_structure)
