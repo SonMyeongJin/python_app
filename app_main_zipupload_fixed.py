@@ -591,6 +591,24 @@ def extract_land_area(df):
     area = ""
     land_types = ["염전", "도로", "임야", "유지", "답", "전", "대", "공장용지", "잡종지", "하천", "구거", "제방", "양어장"]
     
+    # 주요 등기사항 요약 섹션에서 면적 추출 시도
+    summary_row_idx = None
+    for i in range(len(df)):
+        row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+        if "주요 등기사항 요약" in row_text or "주요등기사항요약" in re.sub(r'\s+', '', row_text):
+            summary_row_idx = i
+            break
+    
+    if summary_row_idx is not None:
+        # 요약 섹션 이후 토지 정보 검색
+        for i in range(summary_row_idx + 1, min(summary_row_idx + 10, len(df))):
+            row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+            if "[토지]" in row_text:
+                area_match = re.search(r'(\d[\d,\.]*)\s*[㎡m²]', row_text)
+                if area_match:
+                    return area_match.group(1).replace(',', '')
+    
+    # 이하 기존 추출 방법 (위 방법이 실패한 경우 실행)
     # 파일 식별자에서 면적 추출 시도
     identifier = extract_identifier(df)
     if "[토지]" in identifier:
