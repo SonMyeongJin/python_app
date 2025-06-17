@@ -543,7 +543,7 @@ def extract_land_type(df):
     """
     land_type = ""
     # 더 구체적이고 긴 단어가 먼저 검사되도록 정렬
-    land_types = ["공장용지", "잡종지", "염전", "도로", "임야", "유지", "하천", "구거", "제방", "양어장"]
+    land_types = ["공장용지", "잡종지", "염전", "도로", "임야", "유지", "하천", "구거", "제방", "양어장","전", "답", "대","광천지","수도용지","제방","염전","과수원","목장용지","학교용지","종교용지","주차장","주유소","창고용지","철도용지","공원","묘지","체육용지","유원지","사적지","잡종지"]
     
     # 파일 식별자에서 지목 정보 추출 시도
     identifier = extract_identifier(df)
@@ -644,19 +644,19 @@ def check_san_in_address(address):
     '산'이 숫자 앞에 있으면 'O', 아니면 'X'
     """
     if not isinstance(address, str):
-        return 'X'
+        return ''
     
     # 주소에서 마지막 부분을 가져오기
     parts = address.split()
     if not parts:
-        return 'X'
+        return ''
     
     # 주소의 마지막 부분에서 '산' 다음에 숫자가 오는 패턴 확인
     import re
     for part in parts:
         if re.search(r'산\d+', part) or re.search(r'산\s*\d+', part):
-            return 'O'
-    return 'X'
+            return '산'
+    return ''
 
 def extract_right_holders(df):
     """
