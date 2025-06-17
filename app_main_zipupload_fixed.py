@@ -375,12 +375,12 @@ def extract_named_cols(section, col_keywords):
                         possible_name = parts[0]
                         possible_address = " ".join(parts[1:])
                         if is_address_pattern(possible_address):
-                            row_dict["등기명의인"] = possible_name
+                            row_dict["등기명의인"] = possible_name.replace(" ", "")  # 이름 띄어쓰기 제거
                             row_dict["주소"] = possible_address
                             continue
             
-            # 정리된 등기명의인 설정
-            row_dict["등기명의인"] = owner_text
+            # 정리된 등기명의인 설정 (띄어쓰기 제거)
+            row_dict["등기명의인"] = owner_text.replace(" ", "")
             
         rows.append(row_dict)
     
@@ -926,15 +926,15 @@ if run_button and uploaded_zip:
                     if pd.notna(row["등기명의인"]):
                         ownership_type, clean_name = extract_ownership_type(str(row["등기명의인"]))
                         szj_df.at[idx, "소유구분"] = ownership_type
-                        szj_df.at[idx, "등기명의인"] = clean_name
+                        szj_df.at[idx, "등기명의인"] = clean_name.replace(" ", "")  # 등기명의인 띄어쓰기 제거
                     
                     # 등기명의인에서 주민번호 패턴이 있으면 분리
                     if pd.notna(row["등기명의인"]):
                         jumin = extract_jumin_number(str(row["등기명의인"]))
                         if jumin:
                             szj_df.at[idx, "(주민)등록번호"] = jumin
-                            szj_df.at[idx, "등기명의인"] = str(row["등기명의인"]).replace(jumin, "").strip()
-                    
+                            szj_df.at[idx, "등기명의인"] = str(row["등기명의인"]).replace(jumin, "").strip().replace(" ", "")  # 띄어쓰기 제거
+
                     # 최종지분과 주소 추가 정리
                     address_text = str(row["주소"]).strip()
                     jibun_text = str(row["최종지분"]).strip()
