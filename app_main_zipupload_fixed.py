@@ -27,7 +27,7 @@ run_button = st.button("분석 시작")
 def merge_adjacent_cells(row_series, max_gap=3):
     """
     인접한 셀들을 병합하여 하나의 의미있는 단위로 만드는 함수
-    얇은 선으로 나뉜 셀들을 통합
+    데이터 행에서는 더 신중하게 병합
     """
     merged_row = row_series.copy()
     row_dict = row_series.to_dict()
@@ -35,7 +35,11 @@ def merge_adjacent_cells(row_series, max_gap=3):
     # 빈 셀이 아닌 셀들의 인덱스를 찾기
     non_empty_indices = [idx for idx, val in row_dict.items() if str(val).strip()]
     
-    # 연속된 셀들을 그룹화
+    # 데이터가 너무 적거나 많으면 병합하지 않음 (헤더가 아닌 경우)
+    if len(non_empty_indices) < 2 or len(non_empty_indices) > 10:
+        return merged_row
+    
+    # 연속된 셀들을 그룹화 (더 엄격한 조건)
     groups = []
     current_group = []
     
@@ -43,8 +47,8 @@ def merge_adjacent_cells(row_series, max_gap=3):
         if not current_group:
             current_group = [idx]
         else:
-            # 이전 인덱스와의 거리가 max_gap 이하면 같은 그룹
-            if idx - current_group[-1] <= max_gap:
+            # 이전 인덱스와의 거리가 2 이하면 같은 그룹 (더 엄격하게)
+            if idx - current_group[-1] <= 2:
                 current_group.append(idx)
             else:
                 # 새로운 그룹 시작
@@ -54,9 +58,9 @@ def merge_adjacent_cells(row_series, max_gap=3):
     if current_group:
         groups.append(current_group)
     
-    # 각 그룹 내의 셀들을 병합
+    # 각 그룹 내의 셀들을 병합 (더 신중하게)
     for group in groups:
-        if len(group) > 1:
+        if len(group) > 1 and len(group) <= 3:  # 너무 많은 셀은 병합하지 않음
             # 그룹 내 모든 값을 연결
             merged_value = ""
             for idx in group:
@@ -75,18 +79,23 @@ def merge_adjacent_cells(row_series, max_gap=3):
     
     return merged_row
 
-def merge_dataframe_cells(df):
+def merge_dataframe_cells(df, is_header_row=False):
     """
-    데이터프레임 전체에 셀 병합 로직 적용
+    데이터프레임에 셀 병합 로직 적용
+    헤더 행과 데이터 행을 구분하여 처리
     """
     if df.empty:
         return df
     
     merged_df = df.copy()
     
-    # 각 행에 대해 셀 병합 적용
-    for i in range(len(merged_df)):
-        merged_df.iloc[i] = merge_adjacent_cells(merged_df.iloc[i])
+    # 첫 번째 행은 헤더로 가정하고 더 관대하게 병합
+    if len(merged_df) > 0:
+        merged_df.iloc[0] = merge_adjacent_cells(merged_df.iloc[0], max_gap=3)
+    
+    # 나머지 행들은 데이터 행으로 더 엄격하게 병합
+    for i in range(1, len(merged_df)):
+        merged_df.iloc[i] = merge_adjacent_cells(merged_df.iloc[i], max_gap=2)
     
     return merged_df
 
@@ -209,13 +218,18 @@ def merge_split_headers(header_row):
     return merged_row
 
 def enhanced_keyword_match(header_row, keyword, max_distance=2):
-    """인접한 셀들을 고려한 키워드 매칭"""
-    # 먼저 일반적인 매칭 시도
+    """인접한 셀들을 고려한 키워드 매칭 - 개선된 버전"""
+    # 먼저 정확한 매칭 시도
+    for idx, cell in header_row.items():
+        if keyword_match_exact(cell, keyword):
+            return idx
+    
+    # 부분 매칭 시도
     for idx, cell in header_row.items():
         if keyword_match_partial(cell, keyword):
             return idx
     
-    # 분리된 키워드 매칭 시도
+    # 분리된 키워드 매칭 시도 (더 엄격하게)
     keyword_chars = list(keyword.replace(" ", ""))
     if len(keyword_chars) <= 1:
         return None
@@ -272,7 +286,7 @@ def extract_named_cols(section, col_keywords):
     if section.empty:
         return pd.DataFrame([["기록없음"]])
     
-    # 전체 섹션에 셀 병합 적용
+    # 셀 병합 적용 (헤더와 데이터 구분)
     section = merge_dataframe_cells(section)
     
     header_row = section.iloc[0]
@@ -283,28 +297,26 @@ def extract_named_cols(section, col_keywords):
         col_idx = enhanced_keyword_match(merged_header, target)
         if col_idx is not None:
             col_map[target] = col_idx
-        else:
-            for idx, val in merged_header.items():
-                if keyword_match_partial(val, target):
-                    col_map[target] = idx
-                    break
 
-    # 최종지분 처리 로직은 기존과 동일하게 유지
+    # 최종지분 특별 처리 (기존 로직 유지하되 더 정확하게)
     if "최종지분" not in col_map:
         idx_최종 = None
         idx_지분 = None
         for idx, val in merged_header.items():
-            if str(val).strip() == "최종":
+            val_str = str(val).strip()
+            if val_str == "최종":
                 idx_최종 = idx
-            if str(val).strip() == "지분":
+            elif val_str == "지분":
                 idx_지분 = idx
-        if idx_최종 is not None and idx_지분 is not None and abs(idx_최종 - idx_지분) <= 3:
+        
+        if idx_최종 is not None and idx_지분 is not None and abs(idx_최종 - idx_지분) <= 2:
             col_map["최종지분"] = (min(idx_최종, idx_지분), max(idx_최종, idx_지분))
 
     rows = []
     for i in range(1, len(section)):
         row = section.iloc[i]
         row_dict = {}
+        
         for key in col_keywords:
             if key == "최종지분":
                 if isinstance(col_map.get("최종지분"), tuple):
@@ -318,32 +330,60 @@ def extract_named_cols(section, col_keywords):
                 elif isinstance(col_map.get("최종지분"), int):
                     idx = col_map["최종지분"]
                     val1 = str(row.get(idx, "")).strip()
+                    # 인접 셀 확인은 헤더가 비어있을 때만
                     val2 = ""
                     if (idx + 1) in row and not str(merged_header.get(idx + 1, "")).strip():
                         val2 = str(row.get(idx + 1, "")).strip()
                     if val1 and val2:
                         row_dict[key] = val1 + val2
                     else:
-                        row_dict[key] = val1 or val2
+                        row_dict[key] = val1
                 else:
                     row_dict[key] = ""
             elif key in col_map:
-                row_dict[key] = row.get(col_map[key], "")
+                col_idx = col_map[key]
+                cell_value = row.get(col_idx, "")
+                row_dict[key] = str(cell_value).strip() if pd.notna(cell_value) else ""
             else:
                 row_dict[key] = ""
         
-        # 등기명의인과 주민번호 분리 처리
-        if "등기명의인" in row_dict and "(주민)등록번호" in col_keywords:
+        # 데이터 정리: 등기명의인에 다른 정보가 섞여있는 경우 분리
+        if "등기명의인" in row_dict:
             owner_text = str(row_dict["등기명의인"]).strip()
             
-            # 주민등록번호가 등기명의인 필드에 있는 경우
-            jumin = extract_jumin_number(owner_text)
-            if jumin:
-                # 주민번호는 주민등록번호 필드에 넣고, 등기명의인에서는 제거
-                row_dict["(주민)등록번호"] = jumin
-                row_dict["등기명의인"] = owner_text.replace(jumin, "").strip()
-        
+            # 주민등록번호 분리
+            if "(주민)등록번호" in col_keywords:
+                jumin = extract_jumin_number(owner_text)
+                if jumin:
+                    row_dict["(주민)등록번호"] = jumin
+                    owner_text = owner_text.replace(jumin, "").strip()
+            
+            # 지분 정보 분리
+            if "최종지분" in col_keywords and not row_dict.get("최종지분"):
+                extracted_jibun = extract_jibun(owner_text)
+                if extracted_jibun:
+                    row_dict["최종지분"] = extracted_jibun
+                    owner_text = owner_text.replace(extracted_jibun, "").strip()
+            
+            # 주소 정보 분리
+            if "주소" in col_keywords and not row_dict.get("주소"):
+                if is_address_pattern(owner_text):
+                    # 이름과 주소를 분리하려고 시도
+                    parts = owner_text.split()
+                    if len(parts) > 1:
+                        # 첫 번째 부분이 이름이고 나머지가 주소일 가능성
+                        possible_name = parts[0]
+                        possible_address = " ".join(parts[1:])
+                        if is_address_pattern(possible_address):
+                            row_dict["등기명의인"] = possible_name
+                            row_dict["주소"] = possible_address
+                            continue
+            
+            # 정리된 등기명의인 설정
+            row_dict["등기명의인"] = owner_text
+            
         rows.append(row_dict)
+    
     return pd.DataFrame(rows)
 
 def find_keyword_header(section, col_keywords, max_search_rows=15):
