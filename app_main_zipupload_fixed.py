@@ -175,10 +175,10 @@ def keyword_match_exact(cell, keyword):
 
 def merge_split_headers(header_row):
     """분리된 헤더를 병합하는 함수 - 개선된 버전"""
-    # 먼저 인접 셀 병합 적용
-    merged_row = merge_adjacent_cells(header_row)
+    # 셀 병합을 하지 않고 원본 헤더를 그대로 사용
+    merged_row = header_row.copy()
     
-    # 기존 특정 키워드 병합 로직도 유지
+    # 기존 특정 키워드 병합 로직만 적용 (인접 셀 병합은 제외)
     split_patterns = {
         "주소": ["주", "소"],
         "등기명의인": ["등기", "명의인"],
@@ -201,7 +201,7 @@ def merge_split_headers(header_row):
                     break
         
         if len(found_indices) == len(split_parts):
-            if all(found_indices[i+1] - found_indices[i] <= 3 for i in range(len(found_indices)-1)):
+            if all(found_indices[i+1] - found_indices[i] <= 2 for i in range(len(found_indices)-1)):
                 merged_row[found_indices[0]] = target_keyword
                 for idx in found_indices[1:]:
                     merged_row[idx] = ""
@@ -363,8 +363,8 @@ def find_col_index(header_row, keyword):
 
 # 소유권사항 (갑구)와 에서 필요한 열 추출
 def extract_precise_named_cols(section, col_keywords):
-    # 전체 섹션에 셀 병합 적용
-    section = merge_dataframe_cells(section)
+    # 셀 병합을 하지 않고 원본 섹션 사용
+    section = section.copy()
     # always use first row as header
     header_row = merge_split_headers(section.iloc[0])
     start_row = 1
@@ -391,7 +391,18 @@ def extract_precise_named_cols(section, col_keywords):
     rows = []
     for i in range(start_row, len(section)):
         row = section.iloc[i]
-        row_dict = {key: row[col_map[key]] if col_map[key] in row else "" for key in col_map}
+        row_dict = {}
+        for key in col_keywords:
+            if key in col_map:
+                # 해당 열의 정확한 인덱스에서만 값 가져오기
+                col_idx = col_map[key]
+                if col_idx < len(row):
+                    cell_value = row.iloc[col_idx]
+                    row_dict[key] = str(cell_value).strip() if pd.notna(cell_value) else ""
+                else:
+                    row_dict[key] = ""
+            else:
+                row_dict[key] = ""
         rows.append(row_dict)
     return pd.DataFrame(rows)
 def merge_same_row_if_amount_separated(df):
@@ -1052,12 +1063,10 @@ if run_button and uploaded_zip:
             if sheetname == "3. 저당권사항 (을구)":
                 if "순위번호" in df.columns and "등기목적" in df.columns:
                     df = df.rename(columns={"순위번호": "기록유무"})
-                    # 기록유무를 등기목적으로 대체 (등기목적이 비어있으면 기존 값 유지)
-                    df["기록유무"] = df.apply(
-                        lambda r: r["등기목적"]
-                        if pd.notna(r["등기목적"]) and str(r["등기목적"]).strip()
-                        else r["기록유무"],
-                        axis=1
+                    # 기록유무에 등기목적 값만 표시 (등기목적이 비어있으면 "기록없음")
+                    df["기록유무"] = df["등기목적"].apply(
+                        lambda x: x if pd.notna(x) and str(x).strip() and str(x).strip() != "기록없음"
+                        else "기록없음"
                     )
                     df = df.drop(columns=["등기목적"])
             
