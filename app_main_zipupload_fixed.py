@@ -365,16 +365,22 @@ def find_col_index(header_row, keyword):
 def extract_precise_named_cols(section, col_keywords):
     # 전체 섹션에 셀 병합 적용
     section = merge_dataframe_cells(section)
+    # always use first row as header
+    header_row = merge_split_headers(section.iloc[0])
+    start_row = 1
     
-    header_idx, header_row = find_keyword_header(section, col_keywords)
-    if header_idx is None:
-        header_row = merge_split_headers(section.iloc[0])
-        start_row = 1
-    else:
-        header_row = merge_split_headers(header_row)
-        start_row = header_idx + 1
-    
-    col_map = {key: find_col_index(header_row, key) for key in col_keywords if find_col_index(header_row, key) is not None}
+    col_map = {}
+    for key in col_keywords:
+        idx = find_col_index(header_row, key)
+        # fallback to partial match if exact failed
+        if idx is None:
+            for i, val in header_row.items():
+                if keyword_match_partial(val, key):
+                    idx = i
+                    break
+        if idx is not None:
+            col_map[key] = idx
+
     if not col_map:
        # 모든 컬럼에 대해 빈 값을 생성하고, 첫번째 컬럼에만 "기록없음" 표시
        result = pd.DataFrame(columns=col_keywords)
@@ -1041,14 +1047,18 @@ if run_button and uploaded_zip:
                 style_header_row(ws)
         elif data:
             df = pd.concat(data, ignore_index=True)
-            # Make sure any index column is not included in the output
-            df.reset_index(drop=True, inplace=True)  # Reset and drop any existing index
+            df.reset_index(drop=True, inplace=True)
             
-            # 세 번째 시트(저당권사항)인 경우 "순위번호" 헤더를 "기록유무"로 변경하고 "등기목적" 열 삭제
             if sheetname == "3. 저당권사항 (을구)":
-                if "순위번호" in df.columns:
+                if "순위번호" in df.columns and "등기목적" in df.columns:
                     df = df.rename(columns={"순위번호": "기록유무"})
-                if "등기목적" in df.columns:
+                    # 기록유무를 등기목적으로 대체 (등기목적이 비어있으면 기존 값 유지)
+                    df["기록유무"] = df.apply(
+                        lambda r: r["등기목적"]
+                        if pd.notna(r["등기목적"]) and str(r["등기목적"]).strip()
+                        else r["기록유무"],
+                        axis=1
+                    )
                     df = df.drop(columns=["등기목적"])
             
             for r in dataframe_to_rows(df, index=False, header=True):
