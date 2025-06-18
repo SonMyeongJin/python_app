@@ -602,43 +602,81 @@ def extract_land_type(df):
     # 더 구체적이고 긴 단어가 먼저 검사되도록 정렬
     land_types = ["공장용지", "잡종지", "염전", "도로", "임야", "유지", "하천", "구거", "제방", "양어장","전", "답", "대","광천지","수도용지","제방","염전","과수원","목장용지","학교용지","종교용지","주차장","주유소","창고용지","철도용지","공원","묘지","체육용지","유원지","사적지","잡종지"]
     
-    # 파일 식별자에서 지목 정보 추출 시도
+    # 1. 주요 등기사항 요약 섹션에서 토지 지목 추출 시도 (최우선)
+    summary_row_idx = None
+    for i in range(len(df)):
+        row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+        if "주요 등기사항 요약" in row_text or "주요등기사항요약" in re.sub(r'\s+', '', row_text):
+            summary_row_idx = i
+            break
+    
+    if summary_row_idx is not None:
+        # 요약 섹션 이후 토지 정보 검색
+        for i in range(summary_row_idx + 1, min(summary_row_idx + 10, len(df))):
+            row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
+            if "[토지]" in row_text:
+                # 지목 정보를 더 정확하게 추출
+                for lt in land_types:
+                    # [토지] 다음에 오는 지목 정보 찾기
+                    pattern = r'\[토지\][^가-힣]*' + lt + r'(?:\s|$|[^가-힣])'
+                    if re.search(pattern, row_text):
+                        return lt
+                    # 간단한 패턴도 확인
+                    if lt in row_text and "[토지]" in row_text:
+                        # 주변 문맥 확인하여 실제 지목인지 판단
+                        lt_index = row_text.find(lt)
+                        land_index = row_text.find("[토지]")
+                        if abs(lt_index - land_index) < 50:  # 50자 이내에 있으면 관련성 있음
+                            return lt
+    
+    # 2. 파일 식별자에서 지목 정보 추출 시도
     identifier = extract_identifier(df)
     if "[토지]" in identifier:
         # 정확한 매칭을 위한 패턴: 앞뒤로 공백이나 문장 끝인 경우만 매칭
         for lt in land_types:
-            pattern = r'(^|\s)' + lt + r'($|\s)'
+            pattern = r'(^|\s|[^가-힣])' + lt + r'($|\s|[^가-힣])'
             if re.search(pattern, identifier):
                 land_type = lt
                 break
                 
-        # 정확한 매칭이 안 된 경우 부분 매칭으로 시도
+        # 정확한 매칭이 안 된 경우 부분 매칭으로 시도 (단, 더 엄격하게)
         if not land_type:
             for lt in land_types:
-                if lt in identifier:
-                    land_type = lt
-                    break
+                if lt in identifier and "[토지]" in identifier:
+                    # 지목이 [토지] 근처에 있는지 확인
+                    lt_index = identifier.find(lt)
+                    land_index = identifier.find("[토지]")
+                    if abs(lt_index - land_index) < 30:  # 30자 이내
+                        land_type = lt
+                        break
     
-    # 데이터프레임 전체에서 찾기
+    # 3. 데이터프레임 전체에서 찾기 (더 신중하게)
     if not land_type:
         for i in range(len(df)):
             row_text = " ".join(str(cell) for cell in df.iloc[i] if pd.notna(cell))
             
-            # 정확한 매칭을 먼저 시도
-            for lt in land_types:
-                pattern = r'(^|\s)' + lt + r'($|\s)'
-                if re.search(pattern, row_text):
-                    land_type = lt
-                    return land_type
-            
-            # 정확한 매칭이 안 되면 부분 매칭 시도
-            if not land_type:
+            # [토지] 키워드가 있는 행 우선 검색
+            if "[토지]" in row_text:
+                for lt in land_types:
+                    pattern = r'(^|\s|[^가-힣])' + lt + r'($|\s|[^가-힣])'
+                    if re.search(pattern, row_text):
+                        return lt
+                
+                # 정확한 매칭이 안 되면 부분 매칭 시도 (단, [토지] 근처에서만)
                 for lt in land_types:
                     if lt in row_text:
-                        land_type = lt
-                        return land_type
+                        lt_index = row_text.find(lt)
+                        land_index = row_text.find("[토지]")
+                        if abs(lt_index - land_index) < 30:
+                            return lt
+            
+            # 지목과 면적이 함께 나오는 패턴 찾기
+            for lt in land_types:
+                if lt in row_text and ("㎡" in row_text or "m²" in row_text):
+                    # 지목과 면적이 같은 행에 있으면 실제 지목일 가능성 높음
+                    return lt
     
-    return land_type
+    return land_type if land_type else ""
 
 def extract_land_area(df):
     """
